@@ -123,6 +123,7 @@ int decode_cnts_from_json(char **data)
    uint32_t ifc_cnt = 0;
    uint8_t ifc_state = 0;
    int32_t num_clients = 0;
+   uint32_t recv_delay = 0;
 
    json_t *val = NULL;
    json_t *client_stats_arr = NULL;
@@ -224,7 +225,15 @@ int decode_cnts_from_json(char **data)
       }
       ifc_state = (uint8_t)(json_integer_value(cnt));
 
-      printf("\tID: %s, TYPE: %c, IS_CONN: %d, RM: %" PRIu64 ", RB: %" PRIu64 "\n", ifc_id, ifc_type, ifc_state, ifc_cnts[msg_idx], ifc_cnts[buffers_idx]);
+      cnt = json_object_get(in_ifc_cnts, "recv_delay");
+      if (cnt == NULL) {
+         printf("[ERROR] Could not get key \"recv_delay\" from an input interface json object.\n");
+         json_decref(json_struct);
+         return -1;
+      }
+      recv_delay = (uint32_t)(json_integer_value(cnt));
+
+      printf("\tID: %s, TYPE: %c, IS_CONN: %d, RM: %" PRIu64 ", RB: %" PRIu64 ", RECV_DELAY: %" PRIu32 "\n", ifc_id, ifc_type, ifc_state, ifc_cnts[msg_idx], ifc_cnts[buffers_idx], recv_delay);
       memset(ifc_cnts, 0, 2 * sizeof(uint64_t));
    }
 

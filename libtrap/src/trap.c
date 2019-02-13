@@ -212,6 +212,20 @@ int trap_update_module_param(trap_module_info_t *m, uint16_t param_id, char shor
    return 0;
 }
 
+/**
+ * Return current time in microseconds.
+ *
+ * \return current timestamp
+ */
+static inline uint64_t get_cur_timestamp()
+{
+   struct timespec spec_time;
+
+   clock_gettime(CLOCK_MONOTONIC, &spec_time);
+   /* time in microseconds seconds -> secs * microsends + nanoseconds */
+   return spec_time.tv_sec * 1000000 + (spec_time.tv_nsec / 1000);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -552,7 +566,7 @@ static void *trap_automatic_flush_thr(void *arg)
       VERBOSE(CL_VERBOSE_BASIC, "--------------- STATS --------------- ");
       VERBOSE(CL_VERBOSE_BASIC, "------------- INPUT IFC ------------- ");
       for (j = 0; j < ctx->num_ifc_in; j++) {
-         VERBOSE(CL_VERBOSE_BASIC, "IFC[%" PRIu32 "]: recv buf: %" PRIu64 ", msg: %" PRIu64 ".", j, __sync_fetch_and_add(&ctx->counter_recv_buffer[j], 0), __sync_fetch_and_add(&ctx->counter_recv_message[j], 0));
+         VERBOSE(CL_VERBOSE_BASIC, "IFC[%" PRIu32 "]: recv buf: %" PRIu64 ", msg: %" PRIu64 ", recv delay: %" PRIu32 ".", j, __sync_fetch_and_add(&ctx->counter_recv_buffer[j], 0), __sync_fetch_and_add(&ctx->counter_recv_message[j], 0), ctx->recv_delay[j]);
       }
       VERBOSE(CL_VERBOSE_BASIC, "------------- OUTPUT IFC ------------ ");
       for (j = 0; j < ctx->num_ifc_out; j++) {
@@ -1627,6 +1641,10 @@ void trap_free_ctx_t(trap_ctx_priv_t **ctx)
    c->counter_recv_buffer = NULL;
    free(c->counter_dropped_message);
    c->counter_dropped_message = NULL;
+   free(c->recv_timestamp);
+   c->recv_timestamp = NULL;
+   free(c->recv_delay);
+   c->recv_delay = NULL;
 
    pthread_mutex_destroy(&c->error_mtx);
 
@@ -1739,6 +1757,8 @@ int trap_ctx_terminate(trap_ctx_t *ctx)
 int trap_ctx_recv(trap_ctx_t *ctx, uint32_t ifcidx, const void **data, uint16_t *size)
 {
    int ret_val = 0;
+   uint64_t tmp_timestamp;
+
    trap_ctx_priv_t *c = (trap_ctx_priv_t *) ctx;
    if (c == NULL || c->initialized == 0) {
       return TRAP_E_NOT_INITIALIZED;
@@ -1751,6 +1771,10 @@ int trap_ctx_recv(trap_ctx_t *ctx, uint32_t ifcidx, const void **data, uint16_t 
    if (ifcidx >= c->num_ifc_in) {
       return trap_errorf(c, TRAP_E_NOT_SELECTED, "No input ifc to get data from...");
    }
+
+   tmp_timestamp = c->recv_timestamp[ifcidx];
+   c->recv_timestamp[ifcidx] = get_cur_timestamp();
+   c->recv_delay[ifcidx] = c->recv_timestamp[ifcidx] - tmp_timestamp;
 
    ret_val = trap_read_from_buffer(c, ifcidx, data, size, c->in_ifc_list[ifcidx].datatimeout);
    return trap_error(ctx, ret_val);
@@ -2266,6 +2290,9 @@ trap_ctx_t *trap_ctx_init2(trap_module_info_t *module_info, trap_ifc_spec_t ifc_
    ctx->counter_recv_buffer = (uint64_t *) calloc(ctx->num_ifc_in, sizeof(uint64_t));
    ctx->counter_dropped_message = (uint64_t *) calloc(ctx->num_ifc_out, sizeof(uint64_t));
 
+   ctx->recv_delay = (uint32_t *) calloc(ctx->num_ifc_in, sizeof(uint32_t));
+   ctx->recv_timestamp = (uint64_t *) calloc(ctx->num_ifc_in, sizeof(uint64_t));
+
    ctx->terminated = 0;
 
    // Create input interfaces
@@ -2278,6 +2305,7 @@ trap_ctx_t *trap_ctx_init2(trap_module_info_t *module_info, trap_ifc_spec_t ifc_
       /* set default value of datatimeout */
       for (i=0; i<ctx->num_ifc_in; ++i) {
          ctx->in_ifc_list[i].datatimeout = TRAP_WAIT;
+         ctx->recv_timestamp[i] = get_cur_timestamp();
       }
       if (ctx->num_ifc_in > 1) {
          ctx->in_ifc_results = (trap_multi_result_t *) calloc(1, IN_IFC_RESULTS_SIZE(ctx));
@@ -2493,6 +2521,14 @@ alloc_counter_failed:
    if (ctx->counter_dropped_message) {
       free(ctx->counter_dropped_message);
       ctx->counter_dropped_message = NULL;
+   }
+   if (ctx->recv_timestamp) {
+      free(ctx->recv_timestamp);
+      ctx->recv_timestamp = NULL;
+   }
+   if (ctx->recv_delay) {
+      free(ctx->recv_delay);
+      ctx->recv_delay = NULL;
    }
 
    trap_free_global_vars();
@@ -2721,7 +2757,7 @@ int encode_cnts_to_json(char **data, trap_ctx_priv_t *ctx)
       if (ifc_id == NULL) {
          ifc_id = none_ifc_id;
       }
-      in_ifc_cnts = json_pack("{sisssisIsI}", "ifc_state", ctx->in_ifc_list[x].is_conn(ctx->in_ifc_list[x].priv), "ifc_id", ifc_id, "ifc_type", (int) (ctx->in_ifc_list[x].ifc_type), "messages", __sync_fetch_and_add(&ctx->counter_recv_message[x], 0), "buffers", __sync_fetch_and_add(&ctx->counter_recv_buffer[x], 0));
+      in_ifc_cnts = json_pack("{sisssisIsIsI}", "ifc_state", ctx->in_ifc_list[x].is_conn(ctx->in_ifc_list[x].priv), "ifc_id", ifc_id, "ifc_type", (int) (ctx->in_ifc_list[x].ifc_type), "messages", __sync_fetch_and_add(&ctx->counter_recv_message[x], 0), "buffers", __sync_fetch_and_add(&ctx->counter_recv_buffer[x], 0), "recv_delay", ctx->recv_delay[x]);
       if (json_array_append_new(in_ifces_arr, in_ifc_cnts) == -1) {
          VERBOSE(CL_ERROR, "Service thread - could not append new item to out_ifces_arr while creating json string with counters..\n");
          goto clean_up;

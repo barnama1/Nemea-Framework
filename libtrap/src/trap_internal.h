@@ -335,6 +335,14 @@ struct trap_ctx_priv_s {
     * Indicator of initialized service thread
     */
    int service_thread_initialized;
+   /**
+    * Timestamp used for measuring delay between two receive calls
+    */
+   uint64_t *recv_timestamp;
+   /**
+    * Delay between two receive calls
+    */
+   uint32_t *recv_delay;
 
    /**
     * \defgroup ctxifccounters IFC counters
