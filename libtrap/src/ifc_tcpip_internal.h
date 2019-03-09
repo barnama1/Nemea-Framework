@@ -57,9 +57,9 @@
 
 #define DEFAULT_MAX_DATA_LENGTH  (sizeof(trap_buffer_header_t) + 1024) /**< Obsolete? */
 #define DEFAULT_TIMEOUT_ACCEPT   0         /**< Default timeout used in accept_new_client() [microseconds] */
-#define DEFAULT_BUFFER_COUNT     1
+#define DEFAULT_BUFFER_COUNT     10
 #define DEFAULT_BUFFER_SIZE      100000    /**< Default buffer size [bytes] */
-#define DEFAULT_MAX_CLIENTS      10
+#define DEFAULT_MAX_CLIENTS      20
 
 typedef struct buffer_s {
    uint32_t wr_index;                      /**< Pointer to first free byte in buffer */

@@ -537,6 +537,7 @@ static inline int trap_copy_autoflush(trap_ctx_priv_t *ctx)
  */
 static void *trap_automatic_flush_thr(void *arg)
 {
+   pthread_exit(NULL);
    int i, n;
    int64_t usec;
    uint32_t j;
@@ -564,9 +565,6 @@ static void *trap_automatic_flush_thr(void *arg)
       if (__sync_fetch_and_add(&ctx->ifc_change, 0) > 0) {
          n = trap_copy_autoflush(ctx);
       }
-
-      usleep(100000);
-      continue;
 
       // Sort array by timeout if we have more than one output interface
       if (n != 0) {
