@@ -340,9 +340,17 @@ struct trap_ctx_priv_s {
     */
    uint64_t *recv_timestamp;
    /**
-    * Delay between two receive calls
+    * Timestamp used for measuring delay between two send calls
+    */
+   uint64_t *send_timestamp;
+   /**
+    * Delay between last two receive calls
     */
    uint32_t *recv_delay;
+   /**
+    * Delay between last two send calls
+    */
+   uint32_t *send_delay;
 
    /**
     * \defgroup ctxifccounters IFC counters

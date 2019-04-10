@@ -124,6 +124,7 @@ int decode_cnts_from_json(char **data)
    uint8_t ifc_state = 0;
    int32_t num_clients = 0;
    uint32_t recv_delay = 0;
+   uint32_t send_delay = 0;
 
    json_t *val = NULL;
    json_t *client_stats_arr = NULL;
@@ -330,7 +331,15 @@ int decode_cnts_from_json(char **data)
       }
       num_clients = (int32_t)(json_integer_value(cnt));
 
-      printf("\tID: %s, TYPE: %c, NUM_CLI: %d, SM: %" PRIu64 ", DM: %" PRIu64 ", SB: %" PRIu64 ", AF: %" PRIu64 "\n", ifc_id, ifc_type, num_clients, ifc_cnts[msg_idx], ifc_cnts[dropped_msg_idx], ifc_cnts[buffers_idx], ifc_cnts[af_idx]);
+      cnt = json_object_get(out_ifc_cnts, "send_delay");
+      if (cnt == NULL) {
+         printf("[ERROR] Could not get key \"send_delay\" from an input interface json object.\n");
+         json_decref(json_struct);
+         return -1;
+      }
+      send_delay = (uint32_t)(json_integer_value(cnt));
+
+      printf("\tID: %s, TYPE: %c, NUM_CLI: %d, SEND_DELAY: %u, SM: %" PRIu64 ", DM: %" PRIu64 ", SB: %" PRIu64 ", AF: %" PRIu64 "\n", ifc_id, ifc_type, num_clients, send_delay, ifc_cnts[msg_idx], ifc_cnts[dropped_msg_idx], ifc_cnts[buffers_idx], ifc_cnts[af_idx]);
       memset(ifc_cnts, 0, 4 * sizeof(uint64_t));
 
       client_stats_arr = json_object_get(out_ifc_cnts, "client_stats_arr");

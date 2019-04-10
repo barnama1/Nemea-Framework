@@ -1435,8 +1435,12 @@ void trap_free_ctx_t(trap_ctx_priv_t **ctx)
    c->counter_dropped_message = NULL;
    free(c->recv_timestamp);
    c->recv_timestamp = NULL;
+   free(c->send_timestamp);
+   c->send_timestamp = NULL;
    free(c->recv_delay);
    c->recv_delay = NULL;
+   free(c->send_delay);
+   c->send_delay = NULL;
 
    pthread_mutex_destroy(&c->error_mtx);
 
@@ -1682,6 +1686,7 @@ int trap_ctx_send(trap_ctx_t *ctx, unsigned int ifc, const void *data, uint16_t 
    int ret_val = TRAP_E_OK;
    trap_ctx_priv_t *c = (trap_ctx_priv_t *) ctx;
    trap_output_ifc_t* ifc_ptr = &c->out_ifc_list[ifc];
+   uint64_t tmp_timestamp;
 
    if (c == NULL || c->initialized == 0) {
       return TRAP_E_NOT_INITIALIZED;
@@ -1694,6 +1699,10 @@ int trap_ctx_send(trap_ctx_t *ctx, unsigned int ifc, const void *data, uint16_t 
    if (ifc >= c->num_ifc_out) {
       return trap_error(c, TRAP_E_BAD_IFC_INDEX);
    }
+
+   tmp_timestamp = c->send_timestamp[ifc];
+   c->send_timestamp[ifc] = get_cur_timestamp();
+   c->send_delay[ifc] = c->send_timestamp[ifc] - tmp_timestamp;
 
    ret_val = ifc_ptr->send(ifc_ptr->priv, data, size, ifc_ptr->datatimeout);
 
@@ -2082,6 +2091,8 @@ trap_ctx_t *trap_ctx_init2(trap_module_info_t *module_info, trap_ifc_spec_t ifc_
 
    ctx->recv_delay = (uint32_t *) calloc(ctx->num_ifc_in, sizeof(uint32_t));
    ctx->recv_timestamp = (uint64_t *) calloc(ctx->num_ifc_in, sizeof(uint64_t));
+   ctx->send_delay = (uint32_t *) calloc(ctx->num_ifc_out, sizeof(uint32_t));
+   ctx->send_timestamp = (uint64_t *) calloc(ctx->num_ifc_out, sizeof(uint64_t));
 
    ctx->terminated = 0;
 
@@ -2095,7 +2106,7 @@ trap_ctx_t *trap_ctx_init2(trap_module_info_t *module_info, trap_ifc_spec_t ifc_
       /* set default value of datatimeout */
       for (i=0; i<ctx->num_ifc_in; ++i) {
          ctx->in_ifc_list[i].datatimeout = TRAP_WAIT;
-         ctx->recv_timestamp[i] = get_cur_timestamp();
+         ctx->send_timestamp[i] = ctx->recv_timestamp[i] = get_cur_timestamp();
       }
       if (ctx->num_ifc_in > 1) {
          ctx->in_ifc_results = (trap_multi_result_t *) calloc(1, IN_IFC_RESULTS_SIZE(ctx));
@@ -2309,6 +2320,14 @@ alloc_counter_failed:
    if (ctx->recv_delay) {
       free(ctx->recv_delay);
       ctx->recv_delay = NULL;
+   }
+   if (ctx->send_timestamp) {
+      free(ctx->send_timestamp);
+      ctx->send_timestamp = NULL;
+   }
+   if (ctx->send_delay) {
+      free(ctx->send_delay);
+      ctx->send_delay = NULL;
    }
 
    trap_free_global_vars();
@@ -2544,7 +2563,7 @@ int encode_cnts_to_json(char **data, trap_ctx_priv_t *ctx)
          goto clean_up;
       }
 
-      out_ifc_cnts = json_pack("{sosisssisIsIsIsI}", "client_stats_arr", client_stats_arr, "num_clients", ctx->out_ifc_list[x].get_client_count(ctx->out_ifc_list[x].priv), "ifc_id", ifc_id, "ifc_type", (int) (ctx->out_ifc_list[x].ifc_type), "sent-messages", __sync_fetch_and_add(&ctx->counter_send_message[x], 0), "dropped-messages", __sync_fetch_and_add(&ctx->counter_dropped_message[x], 0), "buffers", __sync_fetch_and_add(&ctx->counter_send_buffer[x], 0), "autoflushes", __sync_fetch_and_add(&ctx->counter_autoflush[x],0));
+      out_ifc_cnts = json_pack("{sosisssisIsIsIsIsI}", "client_stats_arr", client_stats_arr, "num_clients", ctx->out_ifc_list[x].get_client_count(ctx->out_ifc_list[x].priv), "ifc_id", ifc_id, "ifc_type", (int) (ctx->out_ifc_list[x].ifc_type), "sent-messages", __sync_fetch_and_add(&ctx->counter_send_message[x], 0), "dropped-messages", __sync_fetch_and_add(&ctx->counter_dropped_message[x], 0), "buffers", __sync_fetch_and_add(&ctx->counter_send_buffer[x], 0), "autoflushes", __sync_fetch_and_add(&ctx->counter_autoflush[x],0), "send_delay", ctx->send_delay[x]);
       if (json_array_append_new(out_ifces_arr, out_ifc_cnts) == -1) {
          VERBOSE(CL_ERROR, "Service thread - could not append new item to out_ifces_arr while creating json string with counters..\n");
          goto clean_up;
