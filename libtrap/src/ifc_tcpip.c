@@ -1242,11 +1242,11 @@ static void *sending_thread_func(void *priv)
          usleep(100000);
          continue;
       }
-
+/*
       if ((get_cur_timestamp() - c->autoflush_timestamp) > c->ctx->out_ifc_list[c->ifc_idx].timeout) {
          tcpip_sender_flush(c);
       }
-
+*/
       FD_ZERO(&disset);
       FD_ZERO(&set);
       client_ready = 0;
